@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: datacrunch_postgres
+    environment:
+      POSTGRES_DB: datacrunch_db
+      POSTGRES_USER: datacrunch_user
+      POSTGRES_PASSWORD: datacrunch_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U datacrunch_user -d datacrunch_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
