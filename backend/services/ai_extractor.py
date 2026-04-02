@@ -1,9 +1,10 @@
-import anthropic
+import google.generativeai as genai
 import json
 from config import get_settings
 
 settings = get_settings()
-client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+genai.configure(api_key=settings.GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 SYSTEM_PROMPT = """You are a financial data extraction specialist for M&A due diligence.
 Your job is to extract structured financial data from document text and return ONLY valid JSON.
@@ -99,30 +100,19 @@ Extract ALL payroll data from this document and return this exact JSON structure
 
 def extract_financial_data(text: str, document_type: str) -> dict:
     """
-    Sends PDF text to Claude and returns structured JSON.
+    Sends PDF text to Gemini and returns structured JSON.
     """
     prompt_template = EXTRACTION_PROMPTS.get(document_type, EXTRACTION_PROMPTS["financial_statement"])
 
-    message = client.messages.create(
-        model="claude-opus-4-6",
-        max_tokens=4096,
-        system=SYSTEM_PROMPT,
-        messages=[
-            {
-                "role": "user",
-                "content": f"{prompt_template}\n\nDOCUMENT TEXT:\n{text[:15000]}"
-                # Limit to 15k chars to stay within token limits
-            }
-        ]
-    )
+    full_prompt = f"{SYSTEM_PROMPT}\n\n{prompt_template}\n\nDOCUMENT TEXT:\n{text[:15000]}"
 
-    raw_response = message.content[0].text.strip()
+    response = model.generate_content(full_prompt)
+    raw_response = response.text.strip()
 
-    # Parse and validate JSON
+    # Parse JSON — strip markdown code blocks if present
     try:
         data = json.loads(raw_response)
     except json.JSONDecodeError:
-        # Try to extract JSON if wrapped in markdown code blocks
         if "```json" in raw_response:
             json_str = raw_response.split("```json")[1].split("```")[0].strip()
             data = json.loads(json_str)
@@ -130,6 +120,6 @@ def extract_financial_data(text: str, document_type: str) -> dict:
             json_str = raw_response.split("```")[1].split("```")[0].strip()
             data = json.loads(json_str)
         else:
-            raise ValueError(f"Claude returned invalid JSON: {raw_response[:200]}")
+            raise ValueError(f"Gemini returned invalid JSON: {raw_response[:200]}")
 
     return data
