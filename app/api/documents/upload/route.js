@@ -3,6 +3,7 @@ import { loadDB, saveDB, nextId } from "@/lib/db";
 import { getUserFromRequest } from "@/lib/auth";
 import { extractPdfText } from "@/lib/pdf";
 import { extractFinancialData } from "@/lib/ai";
+import { validateExtraction } from "@/lib/validate";
 import { generateExcel } from "@/lib/excel";
 
 export async function POST(request) {
@@ -47,7 +48,9 @@ export async function POST(request) {
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
     const { text } = await extractPdfText(buffer);
-    const extracted = await extractFinancialData(text, documentType);
+    const raw = await extractFinancialData(text, documentType);
+    // Server-side validation — never trust AI to calculate totals
+    const extracted = validateExtraction(raw);
 
     // Validation check
     let mismatch = false;
