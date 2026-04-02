@@ -111,6 +111,7 @@ def extract_financial_data(text: str, document_type: str) -> dict:
         ],
         temperature=0.1,
         max_tokens=4096,
+        response_format={"type": "json_object"},
     )
 
     raw_response = response.choices[0].message.content.strip()
