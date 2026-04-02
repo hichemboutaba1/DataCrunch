@@ -21,6 +21,7 @@ export default function Dashboard() {
   const [uploadProgress, setUploadProgress] = useState(null);
   const [docType, setDocType] = useState("financial_statement");
   const [error, setError] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null);
   const fileRef = useRef();
   const navigate = useNavigate();
   const pollingRef = useRef({});
@@ -174,8 +175,11 @@ export default function Dashboard() {
               ))}
             </div>
             <label style={styles.fileLabel}>
-              <input ref={fileRef} type="file" accept=".pdf" style={{ display: "none" }} />
-              <span style={styles.fileBtn}>Choose PDF File</span>
+              <input ref={fileRef} type="file" accept=".pdf" style={{ display: "none" }}
+                onChange={(e) => setSelectedFile(e.target.files[0]?.name || null)} />
+              <span style={styles.fileBtn}>
+                {selectedFile ? `📄 ${selectedFile}` : "Choose PDF File"}
+              </span>
             </label>
             <button style={styles.uploadBtn} type="submit" disabled={uploading}>
               {uploading ? "Uploading..." : "Upload & Analyze"}
