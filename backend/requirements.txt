@@ -19,8 +19,7 @@ pdfplumber==0.11.0
 # AI
 groq==0.9.0
 
-# Data & Excel
-pandas==2.2.2
+# Excel
 openpyxl==3.1.2
 
 # Billing
