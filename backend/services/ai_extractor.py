@@ -7,8 +7,12 @@ client = Groq(api_key=settings.GROQ_API_KEY)
 
 SYSTEM_PROMPT = """You are a financial data extraction specialist for M&A due diligence.
 Your job is to extract structured financial data from document text and return ONLY valid JSON.
-Never include explanations, markdown, or any text outside the JSON object.
-Always calculate totals yourself and compare to stated totals."""
+
+CRITICAL RULES:
+- Return ONLY valid JSON. No explanations, no markdown.
+- ALL values must be actual numbers. NEVER write arithmetic expressions like "100 + 200".
+- For total_calculated, compute the sum yourself and write the final number (e.g. 300, not "100 + 200").
+- Every value in the JSON must be a string, number, boolean, null, array or object. No formulas."""
 
 EXTRACTION_PROMPTS = {
     "financial_statement": """
