@@ -4,7 +4,7 @@ from config import get_settings
 
 settings = get_settings()
 genai.configure(api_key=settings.GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
+model = genai.GenerativeModel("gemini-2.0-flash")
 
 SYSTEM_PROMPT = """You are a financial data extraction specialist for M&A due diligence.
 Your job is to extract structured financial data from document text and return ONLY valid JSON.
