@@ -17,7 +17,7 @@ pymupdf==1.24.3
 pdfplumber==0.11.0
 
 # AI
-google-generativeai>=0.8.0
+groq==0.9.0
 
 # Data & Excel
 pandas==2.2.2

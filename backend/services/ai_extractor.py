@@ -1,10 +1,9 @@
-import google.generativeai as genai
+from groq import Groq
 import json
 from config import get_settings
 
 settings = get_settings()
-genai.configure(api_key=settings.GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-2.0-flash")
+client = Groq(api_key=settings.GROQ_API_KEY)
 
 SYSTEM_PROMPT = """You are a financial data extraction specialist for M&A due diligence.
 Your job is to extract structured financial data from document text and return ONLY valid JSON.
@@ -100,14 +99,21 @@ Extract ALL payroll data from this document and return this exact JSON structure
 
 def extract_financial_data(text: str, document_type: str) -> dict:
     """
-    Sends PDF text to Gemini and returns structured JSON.
+    Sends PDF text to Groq (Llama 3) and returns structured JSON.
     """
     prompt_template = EXTRACTION_PROMPTS.get(document_type, EXTRACTION_PROMPTS["financial_statement"])
 
-    full_prompt = f"{SYSTEM_PROMPT}\n\n{prompt_template}\n\nDOCUMENT TEXT:\n{text[:15000]}"
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": f"{prompt_template}\n\nDOCUMENT TEXT:\n{text[:12000]}"}
+        ],
+        temperature=0.1,
+        max_tokens=4096,
+    )
 
-    response = model.generate_content(full_prompt)
-    raw_response = response.text.strip()
+    raw_response = response.choices[0].message.content.strip()
 
     # Parse JSON — strip markdown code blocks if present
     try:
@@ -120,6 +126,6 @@ def extract_financial_data(text: str, document_type: str) -> dict:
             json_str = raw_response.split("```")[1].split("```")[0].strip()
             data = json.loads(json_str)
         else:
-            raise ValueError(f"Gemini returned invalid JSON: {raw_response[:200]}")
+            raise ValueError(f"AI returned invalid JSON: {raw_response[:200]}")
 
     return data
