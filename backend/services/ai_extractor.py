@@ -101,12 +101,56 @@ Extract ALL payroll data from this document and return this exact JSON structure
 }
 
 
+import re
+
+
+def _fix_arithmetic_in_json(text: str) -> str:
+    """Replace arithmetic expressions like '50328 + 7765 + 1656' with computed values."""
+    def eval_match(match):
+        try:
+            return str(int(eval(match.group(0))))
+        except Exception:
+            return match.group(0)
+    # Match sequences of numbers joined by + (with optional spaces)
+    return re.sub(r'\d+(?:\s*\+\s*\d+)+', eval_match, text)
+
+
+def _extract_json(raw: str) -> dict:
+    """Parse JSON from AI response, handling code blocks and arithmetic expressions."""
+    # Strip markdown code blocks
+    if "```json" in raw:
+        raw = raw.split("```json")[1].split("```")[0].strip()
+    elif "```" in raw:
+        raw = raw.split("```")[1].split("```")[0].strip()
+
+    # Fix arithmetic expressions before parsing
+    raw = _fix_arithmetic_in_json(raw)
+    return json.loads(raw)
+
+
 def extract_financial_data(text: str, document_type: str) -> dict:
     """
     Sends PDF text to Groq (Llama 3) and returns structured JSON.
     """
     prompt_template = EXTRACTION_PROMPTS.get(document_type, EXTRACTION_PROMPTS["financial_statement"])
 
+    try:
+        # Try with JSON mode first
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"{prompt_template}\n\nDOCUMENT TEXT:\n{text[:12000]}"}
+            ],
+            temperature=0.1,
+            max_tokens=4096,
+            response_format={"type": "json_object"},
+        )
+        return json.loads(response.choices[0].message.content.strip())
+    except Exception:
+        pass
+
+    # Fallback: no JSON mode, fix expressions manually
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
@@ -115,22 +159,7 @@ def extract_financial_data(text: str, document_type: str) -> dict:
         ],
         temperature=0.1,
         max_tokens=4096,
-        response_format={"type": "json_object"},
     )
 
     raw_response = response.choices[0].message.content.strip()
-
-    # Parse JSON — strip markdown code blocks if present
-    try:
-        data = json.loads(raw_response)
-    except json.JSONDecodeError:
-        if "```json" in raw_response:
-            json_str = raw_response.split("```json")[1].split("```")[0].strip()
-            data = json.loads(json_str)
-        elif "```" in raw_response:
-            json_str = raw_response.split("```")[1].split("```")[0].strip()
-            data = json.loads(json_str)
-        else:
-            raise ValueError(f"AI returned invalid JSON: {raw_response[:200]}")
-
-    return data
+    return _extract_json(raw_response)
