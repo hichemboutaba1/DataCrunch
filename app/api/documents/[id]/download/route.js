@@ -5,7 +5,7 @@ export async function GET(request, { params }) {
   const payload = await getUserFromRequest(request);
   if (!payload) return new Response("Unauthorized", { status: 401 });
 
-  const db = loadDB();
+  const db = await loadDB();
   const doc = db.documents.find(
     (d) => d.id === parseInt(params.id) && d.organization_id === payload.orgId
   );

@@ -15,7 +15,7 @@ export async function POST(request) {
     return NextResponse.json({ error: "Provide 1-5 document IDs" }, { status: 400 });
   }
 
-  const db = loadDB();
+  const db = await loadDB();
   const docs = ids
     .map(id => db.documents.find(d => d.id === Number(id) && d.organization_id === payload.orgId))
     .filter(d => d && d.status === "completed" && d.extracted_data);

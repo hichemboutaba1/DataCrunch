@@ -7,7 +7,7 @@ export async function GET(request, { params }) {
   const payload = await getUserFromRequest(request);
   if (!payload) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const db = loadDB();
+  const db = await loadDB();
   const doc = db.documents.find(
     (d) => d.id === Number(params.id) && d.organization_id === payload.orgId
   );

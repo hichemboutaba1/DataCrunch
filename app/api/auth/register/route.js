@@ -9,7 +9,7 @@ export async function POST(request) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
-  const db = loadDB();
+  const db = await loadDB();
 
   if (db.users.find((u) => u.email === email)) {
     return NextResponse.json({ error: "Email already registered" }, { status: 400 });
@@ -31,7 +31,7 @@ export async function POST(request) {
   const hashed = await hashPassword(password);
   db.users.push({ id: userId, email, hashed_password: hashed, full_name, organization_id: orgId });
 
-  saveDB(db);
+  await saveDB(db);
 
   const token = await createToken({ sub: email, userId, orgId });
   return NextResponse.json({ access_token: token }, { status: 201 });

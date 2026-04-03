@@ -18,7 +18,7 @@ export async function POST(request) {
   if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 });
   if (!file.name.endsWith(".pdf")) return NextResponse.json({ error: "Only PDF files accepted" }, { status: 400 });
 
-  const db = loadDB();
+  const db = await loadDB();
   const sub = db.subscriptions.find((s) => s.organization_id === payload.orgId);
 
   if (!sub || !["active", "trialing"].includes(sub.status)) {
@@ -44,7 +44,7 @@ export async function POST(request) {
   };
 
   db.documents.push(doc);
-  saveDB(db);
+  await saveDB(db);
 
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -86,7 +86,7 @@ export async function POST(request) {
 
     const excelBuffer = await generateExcel(extracted);
 
-    const dbNow = loadDB();
+    const dbNow = await loadDB();
     const d = dbNow.documents.find((x) => x.id === docId);
     if (d) {
       d.status = "completed";
@@ -103,16 +103,16 @@ export async function POST(request) {
     }
     const s2 = dbNow.subscriptions.find((x) => x.organization_id === payload.orgId);
     if (s2) s2.documents_used += 1;
-    saveDB(dbNow);
+    await saveDB(dbNow);
 
     // Return doc without heavy buffers
     const { excel_buffer: _e, extracted_data: _x, ...rest } = d;
     return NextResponse.json(rest);
   } catch (err) {
-    const dbNow = loadDB();
+    const dbNow = await loadDB();
     const d = dbNow.documents.find((x) => x.id === docId);
     if (d) { d.status = "failed"; d.error_message = err.message; }
-    saveDB(dbNow);
+    await saveDB(dbNow);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

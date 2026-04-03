@@ -13,7 +13,7 @@ export async function GET(request) {
   const statusFilter = searchParams.get("status") || "";
   const search = searchParams.get("search") || "";
 
-  const db = loadDB();
+  const db = await loadDB();
   const user = db.users.find((u) => u.id === payload.userId);
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 

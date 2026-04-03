@@ -68,7 +68,7 @@ export async function GET(request) {
 
   if (!idA || !idB) return NextResponse.json({ error: "Provide ?a=ID&b=ID" }, { status: 400 });
 
-  const db = loadDB();
+  const db = await loadDB();
   const docA = db.documents.find(d => d.id === idA && d.organization_id === payload.orgId);
   const docB = db.documents.find(d => d.id === idB && d.organization_id === payload.orgId);
 
@@ -97,7 +97,7 @@ export async function POST(request) {
 
   if (!idA || !idB) return NextResponse.json({ error: "Provide ?a=ID&b=ID" }, { status: 400 });
 
-  const db = loadDB();
+  const db = await loadDB();
   const docA = db.documents.find(d => d.id === idA && d.organization_id === payload.orgId);
   const docB = db.documents.find(d => d.id === idB && d.organization_id === payload.orgId);
 
