@@ -48,8 +48,27 @@ export async function POST(request) {
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
     const { text, pages } = await extractPdfText(buffer);
+
+    // Detect scanned / image-based PDFs
+    const textLen = text.trim().length;
+    if (textLen < 80) {
+      throw new Error(
+        `PDF has no extractable text (${textLen} chars). This PDF may be a scanned image — please use a text-based PDF or run OCR first.`
+      );
+    }
+
     const raw = await extractFinancialData(text, documentType);
     const extracted = validateExtraction(raw);
+
+    // Warn if AI returned empty data (likely unsupported format)
+    const isEmpty = (
+      (documentType === "payroll" && !(extracted.employees?.length)) ||
+      (documentType === "revenue_list" && !(extracted.clients?.length)) ||
+      (documentType === "financial_statement" && !extracted.revenue?.items?.length && !extracted.expenses?.items?.length)
+    );
+    if (isEmpty) {
+      extracted.validation_notes = `⚠️ No data extracted — PDF text length: ${textLen} chars. The PDF may use an unsupported layout. ${extracted.validation_notes || ""}`;
+    }
 
     // Check for any mismatch
     let mismatch = false;
