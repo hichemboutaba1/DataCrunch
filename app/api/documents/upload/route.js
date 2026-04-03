@@ -39,20 +39,19 @@ export async function POST(request) {
     validation_notes: null,
     error_message: null,
     excel_buffer: null,
+    extracted_data: null,  // stores full extracted JSON for preview & PPT
   };
 
   db.documents.push(doc);
   saveDB(db);
 
-  // Process synchronously (Vercel serverless)
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
-    const { text } = await extractPdfText(buffer);
+    const { text, pages } = await extractPdfText(buffer);
     const raw = await extractFinancialData(text, documentType);
-    // Server-side validation — never trust AI to calculate totals
     const extracted = validateExtraction(raw);
 
-    // Validation check
+    // Check for any mismatch
     let mismatch = false;
     for (const s of ["revenue", "expenses", "assets", "liabilities"]) {
       if (extracted[s]?.mismatch) { mismatch = true; break; }
@@ -69,12 +68,16 @@ export async function POST(request) {
       d.validation_passed = !mismatch;
       d.validation_notes = extracted.validation_notes || "";
       d.excel_buffer = Array.from(excelBuffer);
+      d.extracted_data = extracted;  // full JSON for preview & PPT export
+      d.pages = pages;
     }
     const s2 = dbNow.subscriptions.find((x) => x.organization_id === payload.orgId);
     if (s2) s2.documents_used += 1;
     saveDB(dbNow);
 
-    return NextResponse.json({ ...d, excel_buffer: undefined });
+    // Return doc without heavy buffers
+    const { excel_buffer: _e, extracted_data: _x, ...rest } = d;
+    return NextResponse.json(rest);
   } catch (err) {
     const dbNow = loadDB();
     const d = dbNow.documents.find((x) => x.id === docId);
