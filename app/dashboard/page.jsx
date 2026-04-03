@@ -35,6 +35,19 @@ function Logo() {
   );
 }
 
+// ─── Risk Badge ───────────────────────────────────────────────────────────────
+function RiskBadge({ grade, label, flags }) {
+  if (!grade) return <span style={{ color: "#B0BEC5" }}>—</span>;
+  const colors = { A: "#3DAA5C", B: "#F39C12", C: "#E67E22", D: "#C0392B" };
+  const c = colors[grade] || "#6B7A99";
+  return (
+    <span style={{ display:"inline-flex", alignItems:"center", gap:5 }}>
+      <span style={{ background: c, color:"#fff", borderRadius:4, padding:"1px 7px", fontWeight:800, fontSize:12 }}>{grade}</span>
+      {flags > 0 && <span style={{ color: c, fontSize:11 }}>🚩{flags}</span>}
+    </span>
+  );
+}
+
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 function StatusBadge({ status }) {
   const m = {
@@ -174,6 +187,138 @@ const ms = {
   th: { background: NAVY, color: "#fff", padding: "6px 10px", textAlign: "left", fontWeight: 700 },
   td: { padding: "6px 10px", borderBottom: "1px solid #F0F4F8" },
 };
+
+// ─── Combined Report Tab ──────────────────────────────────────────────────────
+function CombinedTab({ docs }) {
+  const [selected, setSelected] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const completed = docs.filter(d => d.status === "completed");
+
+  function toggle(id) {
+    setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : prev.length < 5 ? [...prev, id] : prev);
+  }
+
+  async function downloadCombined() {
+    if (!selected.length) return;
+    setLoading(true);
+    const res = await api("/api/documents/combined", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: selected }),
+    });
+    setLoading(false);
+    if (!res.ok) { alert("Export failed"); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "DataCrunch_Combined.xlsx"; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div style={s.card}>
+      <h2 style={s.sectionTitle}>Combined Due Diligence Report</h2>
+      <p style={{ color: "#6B7A99", fontSize: 13, marginTop: -8, marginBottom: 16 }}>
+        Select up to 5 completed documents to merge into a single Excel workbook.
+      </p>
+      {completed.length === 0 ? (
+        <p style={{ color: "#6B7A99" }}>No completed documents yet.</p>
+      ) : (
+        <>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+            {completed.map(doc => (
+              <label key={doc.id} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "8px 12px", borderRadius: 7, background: selected.includes(doc.id) ? "#EEF2F7" : "#fff", border: `1.5px solid ${selected.includes(doc.id) ? NAVY : "#DEE2E6"}` }}>
+                <input type="checkbox" checked={selected.includes(doc.id)} onChange={() => toggle(doc.id)} />
+                <span style={{ fontWeight: 600, color: NAVY }}>{doc.filename}</span>
+                <span style={{ color: "#6B7A99", fontSize: 12 }}>{doc.document_type?.replace(/_/g, " ")}</span>
+                {doc.risk_grade && <RiskBadge grade={doc.risk_grade} label={doc.risk_label} flags={doc.red_flags_count} />}
+              </label>
+            ))}
+          </div>
+          <button style={{ ...s.uploadBtn, opacity: selected.length ? 1 : 0.5 }} onClick={downloadCombined} disabled={loading || !selected.length}>
+            {loading ? "Generating…" : `⬇ Download Combined Excel (${selected.length} doc${selected.length !== 1 ? "s" : ""})`}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Checklist Tab ─────────────────────────────────────────────────────────────
+const CHECKLIST_ITEMS = [
+  { category: "Financial", item: "Financial Statement (P&L)", type: "financial_statement", priority: "REQUIRED" },
+  { category: "Financial", item: "Balance Sheet", type: "financial_statement", priority: "REQUIRED" },
+  { category: "Commercial", item: "Revenue breakdown by client", type: "revenue_list", priority: "REQUIRED" },
+  { category: "HR", item: "Payroll / Staff list", type: "payroll", priority: "REQUIRED" },
+  { category: "Financial", item: "3 years of financial history", type: null, multi: true, priority: "IMPORTANT" },
+  { category: "Legal", item: "Corporate structure / Cap table", type: null, priority: "IMPORTANT" },
+  { category: "Legal", item: "Material contracts", type: null, priority: "IMPORTANT" },
+  { category: "Financial", item: "Tax returns (3 years)", type: null, priority: "IMPORTANT" },
+  { category: "HR", item: "Key employment contracts", type: null, priority: "IMPORTANT" },
+  { category: "Commercial", item: "Customer contracts (top 5)", type: null, priority: "RECOMMENDED" },
+  { category: "Financial", item: "Cash flow statement", type: null, priority: "RECOMMENDED" },
+  { category: "Legal", item: "IP / Patents / Trademarks", type: null, priority: "RECOMMENDED" },
+];
+
+function ChecklistTab({ docs }) {
+  const completed = docs.filter(d => d.status === "completed");
+  const types = new Set(completed.map(d => d.document_type));
+  const fsDocs = completed.filter(d => d.document_type === "financial_statement").length;
+
+  function isDone(item) {
+    if (item.multi) return fsDocs >= 3;
+    if (item.type) return types.has(item.type);
+    return false;
+  }
+
+  const done = CHECKLIST_ITEMS.filter(isDone).length;
+  const pct = Math.round((done / CHECKLIST_ITEMS.length) * 100);
+  const pctColor = pct >= 80 ? GREEN : pct >= 50 ? YELLOW : RED;
+
+  const priorityColor = { REQUIRED: RED, IMPORTANT: YELLOW, RECOMMENDED: "#6B7A99" };
+
+  return (
+    <div style={s.card}>
+      <h2 style={s.sectionTitle}>Due Diligence Checklist</h2>
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+        <div style={{ fontSize: 32, fontWeight: 800, color: pctColor }}>{pct}%</div>
+        <div>
+          <div style={{ fontWeight: 700, color: NAVY }}>{done}/{CHECKLIST_ITEMS.length} items completed</div>
+          <div style={{ fontSize: 12, color: "#6B7A99" }}>Upload more documents to complete the checklist</div>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ height: 10, background: "#F0F4F8", borderRadius: 5, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${pct}%`, background: pctColor, borderRadius: 5, transition: "width 0.4s" }} />
+          </div>
+        </div>
+      </div>
+      <table style={{ ...ms.table, fontSize: 13 }}>
+        <thead>
+          <tr>
+            <th style={ms.th}>Status</th>
+            <th style={ms.th}>Category</th>
+            <th style={ms.th}>Document</th>
+            <th style={ms.th}>Priority</th>
+          </tr>
+        </thead>
+        <tbody>
+          {CHECKLIST_ITEMS.map((item, i) => {
+            const done = isDone(item);
+            return (
+              <tr key={i} style={{ background: i % 2 === 0 ? "#F0F4F8" : "#fff" }}>
+                <td style={{ ...ms.td, textAlign: "center", fontSize: 16 }}>{done ? "✅" : "⬜"}</td>
+                <td style={{ ...ms.td, color: "#6B7A99", fontSize: 11 }}>{item.category}</td>
+                <td style={{ ...ms.td, fontWeight: done ? 400 : 600, color: done ? "#6B7A99" : NAVY, textDecoration: done ? "line-through" : "none" }}>{item.item}</td>
+                <td style={{ ...ms.td }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: priorityColor[item.priority] }}>{item.priority}</span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 // ─── Compare Tab ──────────────────────────────────────────────────────────────
 function CompareTab({ docs, token }) {
@@ -407,6 +552,8 @@ export default function Dashboard() {
           { id: "upload", label: "⬆ Upload" },
           { id: "history", label: `📋 Documents (${total})` },
           { id: "compare", label: "⚖ N vs N-1" },
+          { id: "combined", label: "📦 Combined Report" },
+          { id: "checklist", label: "✅ Checklist" },
         ].map(t => (
           <button key={t.id} style={{ ...s.tabBtn, ...(tab === t.id ? s.tabActive : {}) }}
             onClick={() => setTab(t.id)}>{t.label}</button>
@@ -499,7 +646,7 @@ export default function Dashboard() {
               : <div style={{ overflowX: "auto" }}>
                   <table style={s.table}>
                     <thead>
-                      <tr>{["File", "Type", "Status", "Validation", "Date", "Actions"].map(h => (
+                      <tr>{["File", "Type", "Status", "Risk", "Validation", "Date", "Actions"].map(h => (
                         <th key={h} style={s.th}>{h}</th>
                       ))}</tr>
                     </thead>
@@ -511,6 +658,7 @@ export default function Dashboard() {
                           </td>
                           <td style={s.td}>{doc.document_type?.replace(/_/g, " ")}</td>
                           <td style={s.td}><StatusBadge status={doc.status} /></td>
+                          <td style={s.td}><RiskBadge grade={doc.risk_grade} label={doc.risk_label} flags={doc.red_flags_count} /></td>
                           <td style={s.td}>
                             {doc.validation_passed === null ? "—"
                               : doc.validation_passed
@@ -541,6 +689,12 @@ export default function Dashboard() {
 
         {/* ── COMPARE TAB ── */}
         {tab === "compare" && <CompareTab docs={docs.length ? docs : []} />}
+
+        {/* ── COMBINED REPORT TAB ── */}
+        {tab === "combined" && <CombinedTab docs={docs} />}
+
+        {/* ── CHECKLIST TAB ── */}
+        {tab === "checklist" && <ChecklistTab docs={docs} />}
       </div>
 
       {/* Preview Modal */}

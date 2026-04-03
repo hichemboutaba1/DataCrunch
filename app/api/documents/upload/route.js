@@ -5,6 +5,7 @@ import { extractPdfText } from "@/lib/pdf";
 import { extractFinancialData } from "@/lib/ai";
 import { validateExtraction } from "@/lib/validate";
 import { generateExcel } from "@/lib/excel";
+import { analyzeRedFlags } from "@/lib/redflags";
 
 export async function POST(request) {
   const payload = await getUserFromRequest(request);
@@ -80,6 +81,9 @@ export async function POST(request) {
     }
     if (extracted.mismatch) mismatch = true;
 
+    const rfResult = analyzeRedFlags(extracted);
+    extracted._risk = rfResult;
+
     const excelBuffer = await generateExcel(extracted);
 
     const dbNow = loadDB();
@@ -90,8 +94,12 @@ export async function POST(request) {
       d.validation_passed = !mismatch;
       d.validation_notes = extracted.validation_notes || "";
       d.excel_buffer = Array.from(excelBuffer);
-      d.extracted_data = extracted;  // full JSON for preview & PPT export
+      d.extracted_data = extracted;
       d.pages = pages;
+      d.risk_grade = rfResult.grade;
+      d.risk_score = rfResult.riskScore;
+      d.risk_label = rfResult.gradeLabel;
+      d.red_flags_count = rfResult.flags.length;
     }
     const s2 = dbNow.subscriptions.find((x) => x.organization_id === payload.orgId);
     if (s2) s2.documents_used += 1;
