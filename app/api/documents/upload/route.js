@@ -60,6 +60,9 @@ export async function POST(request) {
     const raw = await extractFinancialData(text, documentType);
     const extracted = validateExtraction(raw);
 
+    // Store a text preview for debugging (first 800 chars)
+    extracted._text_preview = text.slice(0, 800);
+
     // Warn if AI returned empty data (likely unsupported format)
     const isEmpty = (
       (documentType === "payroll" && !(extracted.employees?.length)) ||
@@ -67,7 +70,7 @@ export async function POST(request) {
       (documentType === "financial_statement" && !extracted.revenue?.items?.length && !extracted.expenses?.items?.length)
     );
     if (isEmpty) {
-      extracted.validation_notes = `⚠️ No data extracted — PDF text length: ${textLen} chars. The PDF may use an unsupported layout. ${extracted.validation_notes || ""}`;
+      extracted.validation_notes = `⚠️ No data extracted — PDF text length: ${textLen} chars. Check Validation Report tab for raw text preview.`;
     }
 
     // Check for any mismatch
