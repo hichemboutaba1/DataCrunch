@@ -81,8 +81,8 @@ export async function GET(request) {
   const comparison = { metrics };
 
   return NextResponse.json({
-    docA: { id: docA.id, filename: docA.filename, period: docA.extracted_data.period },
-    docB: { id: docB.id, filename: docB.filename, period: docB.extracted_data.period },
+    docA: { id: docA.id, filename: docA.filename, period: docA.extracted_data.period, currency: docA.extracted_data.currency },
+    docB: { id: docB.id, filename: docB.filename, period: docB.extracted_data.period, currency: docB.extracted_data.currency },
     comparison,
   });
 }
