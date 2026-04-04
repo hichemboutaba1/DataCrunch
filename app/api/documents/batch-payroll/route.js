@@ -4,7 +4,6 @@ import { getUserFromRequest } from "@/lib/auth";
 import { extractPdfText } from "@/lib/pdf";
 import { extractPayslip } from "@/lib/ai";
 import { validateExtraction } from "@/lib/validate";
-import { generateExcel } from "@/lib/excel";
 import { analyzeRedFlags } from "@/lib/redflags";
 import { ocrPdf } from "@/lib/ocr";
 
@@ -90,10 +89,7 @@ export async function POST(request) {
   extracted._risk = rfResult;
   extracted._text_preview = `Batch of ${files.length} payslip(s). Errors: ${errors.length > 0 ? errors.join("; ") : "none"}`;
 
-  const excelBuffer = await generateExcel(extracted);
-
-  // Reload fresh DB before writing — the AI loop above can take 30-60s,
-  // another user may have written to the DB in the meantime
+  // Reload fresh DB before writing — the AI loop above can take 30-60s
   const dbNow = await loadDB();
   const docId = nextId(dbNow);
   const doc = {
@@ -109,7 +105,6 @@ export async function POST(request) {
     validation_passed: !extracted.mismatch,
     validation_notes: extracted.validation_notes,
     error_message: errors.length ? errors.join("; ") : null,
-    excel_buffer: Array.from(excelBuffer),
     extracted_data: extracted,
     risk_grade: rfResult.grade,
     risk_score: rfResult.riskScore,

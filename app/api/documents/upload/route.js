@@ -4,7 +4,6 @@ import { getUserFromRequest } from "@/lib/auth";
 import { extractPdfText } from "@/lib/pdf";
 import { extractFinancialData } from "@/lib/ai";
 import { validateExtraction } from "@/lib/validate";
-import { generateExcel } from "@/lib/excel";
 import { analyzeRedFlags } from "@/lib/redflags";
 import { ocrPdf } from "@/lib/ocr";
 
@@ -94,7 +93,8 @@ export async function POST(request) {
     const rfResult = analyzeRedFlags(extracted);
     extracted._risk = rfResult;
 
-    const excelBuffer = await generateExcel(extracted);
+    // Excel is generated on-demand at download time — don't store binary in DB
+    // (would exceed Upstash 1MB limit as a JSON number array)
 
     // Update the document in the already-loaded db — avoids a second Upstash round-trip
     const d = db.documents.find((x) => x.id === docId);
@@ -103,7 +103,6 @@ export async function POST(request) {
       d.completed_at = new Date().toISOString();
       d.validation_passed = !mismatch;
       d.validation_notes = extracted.validation_notes || "";
-      d.excel_buffer = Array.from(excelBuffer);
       d.extracted_data = extracted;
       d.pages = pages;
       d.risk_grade = rfResult.grade;

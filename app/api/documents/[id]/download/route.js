@@ -1,5 +1,6 @@
 import { getUserFromRequest } from "@/lib/auth";
 import { loadDB } from "@/lib/db";
+import { generateExcel } from "@/lib/excel";
 
 export async function GET(request, { params }) {
   const payload = await getUserFromRequest(request);
@@ -11,12 +12,14 @@ export async function GET(request, { params }) {
   );
 
   if (!doc) return new Response("Not found", { status: 404 });
-  if (doc.status !== "completed" || !doc.excel_buffer) {
+  if (doc.status !== "completed" || !doc.extracted_data) {
     return new Response("Not ready", { status: 400 });
   }
 
-  const buffer = Buffer.from(doc.excel_buffer);
-  const filename = doc.filename.replace(".pdf", ".xlsx");
+  // Regenerate Excel from extracted_data — we no longer store the binary buffer
+  // in the DB to keep Upstash under size limits.
+  const buffer = await generateExcel(doc.extracted_data);
+  const filename = doc.filename.replace(/\.pdf$/i, "") + "_DataCrunch.xlsx";
 
   return new Response(buffer, {
     headers: {
