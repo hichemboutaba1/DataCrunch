@@ -84,8 +84,10 @@ export async function POST(request) {
 
   const excelBuffer = await generateExcel(extracted);
 
-  // Store as a document
-  const docId = nextId(db);
+  // Reload fresh DB before writing — the AI loop above can take 30-60s,
+  // another user may have written to the DB in the meantime
+  const dbNow = await loadDB();
+  const docId = nextId(dbNow);
   const doc = {
     id: docId,
     organization_id: payload.orgId,
@@ -107,10 +109,10 @@ export async function POST(request) {
     red_flags_count: rfResult.flags.length,
   };
 
-  db.documents.push(doc);
-  const s = db.subscriptions.find(x => x.organization_id === payload.orgId);
+  dbNow.documents.push(doc);
+  const s = dbNow.subscriptions.find(x => x.organization_id === payload.orgId);
   if (s) s.documents_used += 1;
-  await saveDB(db);
+  await saveDB(dbNow);
 
   const { excel_buffer: _e, extracted_data: _x, ...rest } = doc;
   return NextResponse.json({ ...rest, employees_extracted: allEmployees.length, errors });
