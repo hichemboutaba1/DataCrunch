@@ -463,8 +463,8 @@ function BatchPayrollTab({ onDone }) {
     if (!res.ok) { setError(data.error || "Batch upload failed"); return; }
 
     // Download the combined Excel
-    if (data.download_id) {
-      const dl = await api(`/api/documents/${data.download_id}/download`);
+    if (data.id) {
+      const dl = await api(`/api/documents/${data.id}/download`);
       if (dl.ok) {
         const blob = await dl.blob();
         const url = URL.createObjectURL(blob);

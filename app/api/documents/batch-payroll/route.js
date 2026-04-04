@@ -13,7 +13,7 @@ export async function POST(request) {
   if (!payload) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const formData = await request.formData();
-  const files = formData.getAll("files"); // multiple files
+  const files = formData.getAll("files[]"); // multiple files (FormData key is "files[]")
   const period = formData.get("period") || null;
   const company = formData.get("company") || null;
 
