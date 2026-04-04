@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { loadDB } from "@/lib/db";
+import { loadDB, loadDocData } from "@/lib/db";
 import { getUserFromRequest } from "@/lib/auth";
 
 export async function GET(request, { params }) {
@@ -13,9 +13,9 @@ export async function GET(request, { params }) {
 
   if (!doc) return NextResponse.json({ error: "Document not found" }, { status: 404 });
   if (doc.status !== "completed") return NextResponse.json({ error: "Document not ready" }, { status: 400 });
-  if (!doc.extracted_data) return NextResponse.json({ error: "No extracted data available" }, { status: 404 });
 
-  // Return extracted_data without the heavy excel_buffer
-  const { excel_buffer: _, ...rest } = doc;
-  return NextResponse.json(rest);
+  const extracted_data = await loadDocData(doc.id);
+  if (!extracted_data) return NextResponse.json({ error: "No extracted data available" }, { status: 404 });
+
+  return NextResponse.json({ ...doc, extracted_data });
 }

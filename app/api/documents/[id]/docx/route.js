@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { loadDB } from "@/lib/db";
+import { loadDB, loadDocData } from "@/lib/db";
 import { getUserFromRequest } from "@/lib/auth";
 import { generateDocx } from "@/lib/docx";
 import { analyzeRedFlags } from "@/lib/redflags";
@@ -15,11 +15,13 @@ export async function GET(request, { params }) {
 
   if (!doc) return NextResponse.json({ error: "Document not found" }, { status: 404 });
   if (doc.status !== "completed") return NextResponse.json({ error: "Document not ready" }, { status: 400 });
-  if (!doc.extracted_data) return NextResponse.json({ error: "No extracted data available" }, { status: 404 });
+
+  const extracted_data = await loadDocData(doc.id);
+  if (!extracted_data) return NextResponse.json({ error: "No extracted data available" }, { status: 404 });
 
   try {
-    const riskData = analyzeRedFlags(doc.extracted_data);
-    const docxBuffer = await generateDocx(doc.extracted_data, riskData);
+    const riskData = analyzeRedFlags(extracted_data);
+    const docxBuffer = await generateDocx(extracted_data, riskData);
     const filename = doc.filename.replace(/\.pdf$/i, "") + "_DataCrunch.docx";
 
     return new Response(docxBuffer, {

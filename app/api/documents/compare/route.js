@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import { loadDB } from "@/lib/db";
+import { loadDB, loadDocData } from "@/lib/db";
 import { getUserFromRequest } from "@/lib/auth";
 import { generateComparisonExcel } from "@/lib/excel";
 
 function buildMetrics(docA, docB) {
   const metrics = [];
 
-  // Revenue
   if (docA.revenue || docB.revenue) {
     metrics.push({ section: "Revenue", label: "Total Revenue", a: docA.revenue?.total_calculated, b: docB.revenue?.total_calculated, bold: true });
     const allLabels = new Set([
@@ -20,7 +19,6 @@ function buildMetrics(docA, docB) {
     }
   }
 
-  // Expenses
   if (docA.expenses || docB.expenses) {
     metrics.push({ section: "Expenses", label: "Total Expenses", a: docA.expenses?.total_calculated, b: docB.expenses?.total_calculated, bold: true });
     const allLabels = new Set([
@@ -34,7 +32,6 @@ function buildMetrics(docA, docB) {
     }
   }
 
-  // EBITDA & Net Income
   if (docA.ebitda != null || docB.ebitda != null) {
     metrics.push({ section: "Profitability", label: "EBITDA", a: docA.ebitda, b: docB.ebitda, bold: true });
   }
@@ -42,7 +39,6 @@ function buildMetrics(docA, docB) {
     metrics.push({ section: "Profitability", label: "Net Income", a: docA.net_income, b: docB.net_income, bold: true });
   }
 
-  // Balance Sheet
   if (docA.assets || docB.assets) {
     metrics.push({ section: "Balance Sheet", label: "Total Assets", a: docA.assets?.total_calculated, b: docB.assets?.total_calculated, bold: true });
   }
@@ -65,25 +61,22 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const idA = Number(searchParams.get("a"));
   const idB = Number(searchParams.get("b"));
-
   if (!idA || !idB) return NextResponse.json({ error: "Provide ?a=ID&b=ID" }, { status: 400 });
 
   const db = await loadDB();
   const docA = db.documents.find(d => d.id === idA && d.organization_id === payload.orgId);
   const docB = db.documents.find(d => d.id === idB && d.organization_id === payload.orgId);
-
   if (!docA || !docB) return NextResponse.json({ error: "Document(s) not found" }, { status: 404 });
-  if (!docA.extracted_data || !docB.extracted_data) {
-    return NextResponse.json({ error: "Both documents must have extracted data" }, { status: 400 });
-  }
 
-  const metrics = buildMetrics(docA.extracted_data, docB.extracted_data);
-  const comparison = { metrics };
+  const [extA, extB] = await Promise.all([loadDocData(docA.id), loadDocData(docB.id)]);
+  if (!extA || !extB) return NextResponse.json({ error: "Both documents must have extracted data" }, { status: 400 });
+
+  const metrics = buildMetrics(extA, extB);
 
   return NextResponse.json({
-    docA: { id: docA.id, filename: docA.filename, period: docA.extracted_data.period, currency: docA.extracted_data.currency },
-    docB: { id: docB.id, filename: docB.filename, period: docB.extracted_data.period, currency: docB.extracted_data.currency },
-    comparison,
+    docA: { id: docA.id, filename: docA.filename, period: extA.period, currency: extA.currency },
+    docB: { id: docB.id, filename: docB.filename, period: extB.period, currency: extB.currency },
+    comparison: { metrics },
   });
 }
 
@@ -94,21 +87,19 @@ export async function POST(request) {
   const { searchParams } = new URL(request.url);
   const idA = Number(searchParams.get("a"));
   const idB = Number(searchParams.get("b"));
-
   if (!idA || !idB) return NextResponse.json({ error: "Provide ?a=ID&b=ID" }, { status: 400 });
 
   const db = await loadDB();
   const docA = db.documents.find(d => d.id === idA && d.organization_id === payload.orgId);
   const docB = db.documents.find(d => d.id === idB && d.organization_id === payload.orgId);
-
   if (!docA || !docB) return NextResponse.json({ error: "Document(s) not found" }, { status: 404 });
-  if (!docA.extracted_data || !docB.extracted_data) {
-    return NextResponse.json({ error: "Both documents must have extracted data" }, { status: 400 });
-  }
+
+  const [extA, extB] = await Promise.all([loadDocData(docA.id), loadDocData(docB.id)]);
+  if (!extA || !extB) return NextResponse.json({ error: "Both documents must have extracted data" }, { status: 400 });
 
   try {
-    const metrics = buildMetrics(docA.extracted_data, docB.extracted_data);
-    const excelBuffer = await generateComparisonExcel(docA.extracted_data, docB.extracted_data, { metrics });
+    const metrics = buildMetrics(extA, extB);
+    const excelBuffer = await generateComparisonExcel(extA, extB, { metrics });
 
     return new Response(excelBuffer, {
       headers: {

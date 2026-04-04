@@ -7,8 +7,8 @@ import { validateExtraction } from "@/lib/validate";
 import { analyzeRedFlags } from "@/lib/redflags";
 import { ocrPdf } from "@/lib/ocr";
 
-// Allow up to 60s — PDF extraction + AI + OCR + Excel can take ~30-45s on scanned files
-export const maxDuration = 60;
+// Allow up to 120s — PDF + OCR + AI analysis can take 30-90s on large/scanned files
+export const maxDuration = 120;
 
 export async function POST(request) {
   const payload = await getUserFromRequest(request);
@@ -42,8 +42,7 @@ export async function POST(request) {
     validation_passed: null,
     validation_notes: null,
     error_message: null,
-    excel_buffer: null,
-    extracted_data: null,
+    extracted_data: null, // saved to separate KV key by saveDB
   };
 
   db.documents.push(doc);
@@ -114,7 +113,7 @@ export async function POST(request) {
     if (s2) s2.documents_used += 1;
     await saveDB(db);
 
-    const { excel_buffer: _e, extracted_data: _x, ...rest } = d;
+    const { extracted_data: _x, ...rest } = d;
     return NextResponse.json(rest);
   } catch (err) {
     console.error("Upload error:", err.message);

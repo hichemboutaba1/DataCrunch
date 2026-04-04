@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { loadDB } from "@/lib/db";
+import { loadDB, loadDocData } from "@/lib/db";
 import { getUserFromRequest } from "@/lib/auth";
 import { generateExcel } from "@/lib/excel";
 import ExcelJS from "exceljs";
@@ -16,12 +16,22 @@ export async function POST(request) {
   }
 
   const db = await loadDB();
-  const docs = ids
+  const docMetas = ids
     .map(id => db.documents.find(d => d.id === Number(id) && d.organization_id === payload.orgId))
-    .filter(d => d && d.status === "completed" && d.extracted_data);
+    .filter(d => d && d.status === "completed");
+
+  if (docMetas.length === 0) {
+    return NextResponse.json({ error: "No completed documents found" }, { status: 404 });
+  }
+
+  // Load extracted_data for each doc in parallel
+  const extractedList = await Promise.all(docMetas.map(d => loadDocData(d.id)));
+  const docs = docMetas
+    .map((d, i) => ({ ...d, extracted_data: extractedList[i] }))
+    .filter(d => d.extracted_data);
 
   if (docs.length === 0) {
-    return NextResponse.json({ error: "No completed documents found" }, { status: 404 });
+    return NextResponse.json({ error: "No documents with extracted data found" }, { status: 404 });
   }
 
   // Build combined workbook
