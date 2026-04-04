@@ -7,6 +7,9 @@ import { validateExtraction } from "@/lib/validate";
 import { generateExcel } from "@/lib/excel";
 import { analyzeRedFlags } from "@/lib/redflags";
 
+// Allow up to 60s — PDF extraction + AI + Excel can take ~15-30s on large files
+export const maxDuration = 60;
+
 export async function POST(request) {
   const payload = await getUserFromRequest(request);
   if (!payload) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -40,7 +43,7 @@ export async function POST(request) {
     validation_notes: null,
     error_message: null,
     excel_buffer: null,
-    extracted_data: null,  // stores full extracted JSON for preview & PPT
+    extracted_data: null,
   };
 
   db.documents.push(doc);
@@ -50,7 +53,6 @@ export async function POST(request) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const { text, pages } = await extractPdfText(buffer);
 
-    // Detect scanned / image-based PDFs
     const textLen = text.trim().length;
     if (textLen < 80) {
       throw new Error(
@@ -61,10 +63,8 @@ export async function POST(request) {
     const raw = await extractFinancialData(text, documentType);
     const extracted = validateExtraction(raw);
 
-    // Store a text preview for debugging (first 800 chars)
     extracted._text_preview = text.slice(0, 800);
 
-    // Warn if AI returned empty data (likely unsupported format)
     const isEmpty = (
       (documentType === "payroll" && !(extracted.employees?.length)) ||
       (documentType === "revenue_list" && !(extracted.clients?.length)) ||
@@ -74,7 +74,6 @@ export async function POST(request) {
       extracted.validation_notes = `⚠️ No data extracted — PDF text length: ${textLen} chars. Check Validation Report tab for raw text preview.`;
     }
 
-    // Check for any mismatch
     let mismatch = false;
     for (const s of ["revenue", "expenses", "assets", "liabilities"]) {
       if (extracted[s]?.mismatch) { mismatch = true; break; }
@@ -86,8 +85,8 @@ export async function POST(request) {
 
     const excelBuffer = await generateExcel(extracted);
 
-    const dbNow = await loadDB();
-    const d = dbNow.documents.find((x) => x.id === docId);
+    // Update the document in the already-loaded db — avoids a second Upstash round-trip
+    const d = db.documents.find((x) => x.id === docId);
     if (d) {
       d.status = "completed";
       d.completed_at = new Date().toISOString();
@@ -101,18 +100,17 @@ export async function POST(request) {
       d.risk_label = rfResult.gradeLabel;
       d.red_flags_count = rfResult.flags.length;
     }
-    const s2 = dbNow.subscriptions.find((x) => x.organization_id === payload.orgId);
+    const s2 = db.subscriptions.find((x) => x.organization_id === payload.orgId);
     if (s2) s2.documents_used += 1;
-    await saveDB(dbNow);
+    await saveDB(db);
 
-    // Return doc without heavy buffers
     const { excel_buffer: _e, extracted_data: _x, ...rest } = d;
     return NextResponse.json(rest);
   } catch (err) {
-    const dbNow = await loadDB();
-    const d = dbNow.documents.find((x) => x.id === docId);
+    console.error("Upload error:", err.message);
+    const d = db.documents.find((x) => x.id === docId);
     if (d) { d.status = "failed"; d.error_message = err.message; }
-    await saveDB(dbNow);
+    await saveDB(db);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

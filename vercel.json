@@ -1,3 +1,7 @@
 {
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "functions": {
+    "app/api/documents/upload/route.js": { "maxDuration": 60 },
+    "app/api/documents/batch-payroll/route.js": { "maxDuration": 60 }
+  }
 }

@@ -7,6 +7,8 @@ import { validateExtraction } from "@/lib/validate";
 import { generateExcel } from "@/lib/excel";
 import { analyzeRedFlags } from "@/lib/redflags";
 
+export const maxDuration = 60;
+
 // POST: accepts multiple PDF files as FormData, combines into one payroll Excel
 export async function POST(request) {
   const payload = await getUserFromRequest(request);
