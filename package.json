@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@mistralai/mistralai": "^2.1.2",
     "@vercel/kv": "^3.0.0",
     "bcryptjs": "^2.4.3",
     "docx": "^9.6.1",

@@ -6,6 +6,7 @@ import { extractPayslip } from "@/lib/ai";
 import { validateExtraction } from "@/lib/validate";
 import { generateExcel } from "@/lib/excel";
 import { analyzeRedFlags } from "@/lib/redflags";
+import { ocrPdf } from "@/lib/ocr";
 
 export const maxDuration = 60;
 
@@ -39,8 +40,13 @@ export async function POST(request) {
     if (!file.name?.endsWith(".pdf")) continue;
     try {
       const buffer = Buffer.from(await file.arrayBuffer());
-      const { text } = await extractPdfText(buffer);
-      if (text.trim().length < 30) { errors.push(`${file.name}: no text extracted`); continue; }
+      let { text } = await extractPdfText(buffer);
+      if (text.trim().length < 30) {
+        if (process.env.MISTRAL_API_KEY) {
+          text = await ocrPdf(buffer);
+        }
+        if (text.trim().length < 20) { errors.push(`${file.name}: no text extracted (scanned PDF)`); continue; }
+      }
 
       const raw = await extractPayslip(text);
       if (!detectedCompany && raw.company_name) detectedCompany = raw.company_name;

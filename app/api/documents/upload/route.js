@@ -6,8 +6,9 @@ import { extractFinancialData } from "@/lib/ai";
 import { validateExtraction } from "@/lib/validate";
 import { generateExcel } from "@/lib/excel";
 import { analyzeRedFlags } from "@/lib/redflags";
+import { ocrPdf } from "@/lib/ocr";
 
-// Allow up to 60s — PDF extraction + AI + Excel can take ~15-30s on large files
+// Allow up to 60s — PDF extraction + AI + OCR + Excel can take ~30-45s on scanned files
 export const maxDuration = 60;
 
 export async function POST(request) {
@@ -51,19 +52,29 @@ export async function POST(request) {
 
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
-    const { text, pages } = await extractPdfText(buffer);
+    let { text, pages } = await extractPdfText(buffer);
 
     const textLen = text.trim().length;
+    let usedOcr = false;
+
+    // Scanned / image-based PDF — fall back to Mistral OCR if key is configured
     if (textLen < 80) {
-      throw new Error(
-        `PDF has no extractable text (${textLen} chars). This PDF may be a scanned image — please use a text-based PDF or run OCR first.`
-      );
+      if (!process.env.MISTRAL_API_KEY) {
+        throw new Error(
+          `PDF has no extractable text (${textLen} chars). This PDF appears to be a scanned image. Please upload a text-based PDF or configure MISTRAL_API_KEY to enable automatic OCR.`
+        );
+      }
+      text = await ocrPdf(buffer);
+      usedOcr = true;
+      if (text.trim().length < 20) {
+        throw new Error("OCR could not extract any text from this PDF. The document may be a blank scan or have very low quality.");
+      }
     }
 
     const raw = await extractFinancialData(text, documentType);
     const extracted = validateExtraction(raw);
 
-    extracted._text_preview = text.slice(0, 800);
+    extracted._text_preview = (usedOcr ? "[OCR] " : "") + text.slice(0, 800);
 
     const isEmpty = (
       (documentType === "payroll" && !(extracted.employees?.length)) ||
