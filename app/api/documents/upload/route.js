@@ -46,7 +46,8 @@ export async function POST(request) {
   };
 
   db.documents.push(doc);
-  await saveDB(db);
+  // Don't save "processing" status upfront — costs 2-5s Upstash I/O.
+  // We save once at the end (completed or failed) to stay within Vercel timeout.
 
   try {
     const buffer = Buffer.from(await file.arrayBuffer());

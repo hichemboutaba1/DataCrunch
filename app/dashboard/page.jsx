@@ -448,18 +448,30 @@ function BatchPayrollTab({ onDone }) {
       setStepIdx(idx);
     }, 2200);
 
-    const form = new FormData();
-    for (const f of files) form.append("files[]", f);
+    const reset = () => {
+      clearInterval(timer);
+      setUploading(false);
+      setStepIdx(-1);
+      setFiles([]);
+      if (fileRef.current) fileRef.current.value = "";
+    };
 
-    const res = await api("/api/documents/batch-payroll", { method: "POST", body: form });
-    const data = await res.json();
+    let res, data = {};
+    try {
+      const form = new FormData();
+      for (const f of files) form.append("files[]", f);
+      res = await api("/api/documents/batch-payroll", { method: "POST", body: form });
+      clearInterval(timer);
+      setStepIdx(PAYSLIP_STEPS.length - 1);
+      await new Promise(r => setTimeout(r, 500));
+      try { data = await res.json(); } catch {}
+    } catch (err) {
+      reset();
+      setError("Batch upload timed out — try fewer files at once.");
+      return;
+    }
 
-    clearInterval(timer);
-    setStepIdx(PAYSLIP_STEPS.length - 1);
-    await new Promise(r => setTimeout(r, 600));
-    setUploading(false); setStepIdx(-1); setFiles([]);
-    if (fileRef.current) fileRef.current.value = "";
-
+    reset();
     if (!res.ok) { setError(data.error || "Batch upload failed"); return; }
 
     // Download the combined Excel
@@ -715,26 +727,44 @@ export default function Dashboard() {
     if (!file) return setError("Please select a PDF file");
     setUploading(true); setError(""); setStepIdx(0);
 
-    // Animate steps while waiting for API
     let idx = 0;
     const timer = setInterval(() => {
       idx = Math.min(idx + 1, STEPS.length - 2);
       setStepIdx(idx);
     }, 1800);
 
-    const form = new FormData();
-    form.append("file", file);
-    form.append("document_type", docType);
-    const res = await api("/api/documents/upload", { method: "POST", body: form });
-    const data = await res.json();
+    const reset = () => {
+      clearInterval(timer);
+      setUploading(false);
+      setStepIdx(-1);
+      setSelectedFile(null);
+      if (fileRef.current) fileRef.current.value = "";
+    };
 
-    clearInterval(timer);
-    setStepIdx(STEPS.length - 1);
-    await new Promise(r => setTimeout(r, 600));
-    setUploading(false); setStepIdx(-1); setSelectedFile(null);
-    if (fileRef.current) fileRef.current.value = "";
-    if (!res.ok) { setError(data.error || "Upload failed"); }
-    else { await load({ type: typeFilter, status: statusFilter, search }); setTab("history"); }
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("document_type", docType);
+      const res = await api("/api/documents/upload", { method: "POST", body: form });
+
+      clearInterval(timer);
+      setStepIdx(STEPS.length - 1);
+      await new Promise(r => setTimeout(r, 500));
+
+      let data = {};
+      try { data = await res.json(); } catch {}
+
+      reset();
+      if (!res.ok) {
+        setError(data.error || "Upload failed — please try again");
+      } else {
+        await load({ type: typeFilter, status: statusFilter, search });
+        setTab("history");
+      }
+    } catch (err) {
+      reset();
+      setError("Upload timed out or connection failed — please try again. If this keeps happening, check your Vercel plan (Pro required for large documents).");
+    }
   }
 
   async function handleDownload(docId, filename) {
