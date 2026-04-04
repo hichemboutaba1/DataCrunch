@@ -17,6 +17,7 @@ const TYPES = [
 ];
 
 const STEPS = ["Uploading PDF", "Extracting text", "AI analysis", "Validating totals", "Generating Excel"];
+const PAYSLIP_STEPS = ["Uploading PDFs", "Extracting payslips", "AI analysis", "Merging employees", "Generating Excel"];
 
 // ─── Logo ────────────────────────────────────────────────────────────────────
 function Logo() {
@@ -428,6 +429,244 @@ function CompareTab({ docs, token }) {
   );
 }
 
+// ─── Batch Payroll Tab ────────────────────────────────────────────────────────
+function BatchPayrollTab({ onDone }) {
+  const [files, setFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [stepIdx, setStepIdx] = useState(-1);
+  const [error, setError] = useState("");
+  const fileRef = useRef();
+
+  async function handleBatchUpload(e) {
+    e.preventDefault();
+    if (!files.length) return setError("Select at least one PDF payslip");
+    setUploading(true); setError(""); setStepIdx(0);
+
+    let idx = 0;
+    const timer = setInterval(() => {
+      idx = Math.min(idx + 1, PAYSLIP_STEPS.length - 2);
+      setStepIdx(idx);
+    }, 2200);
+
+    const form = new FormData();
+    for (const f of files) form.append("files[]", f);
+
+    const res = await api("/api/documents/batch-payroll", { method: "POST", body: form });
+    const data = await res.json();
+
+    clearInterval(timer);
+    setStepIdx(PAYSLIP_STEPS.length - 1);
+    await new Promise(r => setTimeout(r, 600));
+    setUploading(false); setStepIdx(-1); setFiles([]);
+    if (fileRef.current) fileRef.current.value = "";
+
+    if (!res.ok) { setError(data.error || "Batch upload failed"); return; }
+
+    // Download the combined Excel
+    if (data.id) {
+      const dl = await api(`/api/documents/${data.id}/download`);
+      if (dl.ok) {
+        const blob = await dl.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href = url; a.download = "DataCrunch_Payroll.xlsx"; a.click();
+        URL.revokeObjectURL(url);
+      }
+    }
+    onDone();
+  }
+
+  return (
+    <div style={s.card}>
+      <h2 style={s.sectionTitle}>Batch Payslip Upload</h2>
+      <p style={{ color: "#6B7A99", fontSize: 13, marginTop: -8, marginBottom: 16 }}>
+        Upload multiple individual payslip PDFs (bulletins de salaire) at once. DataCrunch extracts each employee and merges them into a single payroll Excel.
+      </p>
+      {error && <div style={s.err}>{error}</div>}
+
+      {uploading ? (
+        <div style={s.steps}>
+          {PAYSLIP_STEPS.map((step, i) => (
+            <div key={i} style={{ ...s.step, ...(i < stepIdx ? s.stepDone : i === stepIdx ? s.stepActive : s.stepPending) }}>
+              <div style={s.stepDot}>{i < stepIdx ? "✓" : i === stepIdx ? <span style={s.spinner}>◌</span> : "○"}</div>
+              <span>{step}</span>
+            </div>
+          ))}
+          <p style={{ color: "#6B7A99", fontSize: 12, marginTop: 8 }}>Processing {files.length} payslip{files.length !== 1 ? "s" : ""}…</p>
+        </div>
+      ) : (
+        <form onSubmit={handleBatchUpload}>
+          <label style={{ cursor: "pointer", display: "block", marginBottom: 16 }}>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".pdf"
+              multiple
+              style={{ display: "none" }}
+              onChange={e => setFiles(Array.from(e.target.files))}
+            />
+            <div style={{ ...s.fileBox, borderColor: files.length ? GREEN : "#DEE2E6" }}>
+              {files.length
+                ? `📄 ${files.length} payslip${files.length !== 1 ? "s" : ""} selected`
+                : "📁 Click to select multiple payslip PDFs"}
+            </div>
+          </label>
+          {files.length > 0 && (
+            <div style={{ marginBottom: 14, maxHeight: 140, overflowY: "auto" }}>
+              {files.map((f, i) => (
+                <div key={i} style={{ fontSize: 12, color: "#6B7A99", padding: "2px 0" }}>📄 {f.name}</div>
+              ))}
+            </div>
+          )}
+          <button style={s.uploadBtn} type="submit" disabled={!files.length}>
+            ⬆ Process {files.length || 0} Payslip{files.length !== 1 ? "s" : ""}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
+// ─── Team Tab ─────────────────────────────────────────────────────────────────
+function TeamTab({ currentUser }) {
+  const [members, setMembers] = useState([]);
+  const [orgName, setOrgName] = useState("");
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [inviteToken, setInviteToken] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  async function loadTeam() {
+    const res = await api("/api/auth/invite");
+    if (res.ok) {
+      const data = await res.json();
+      setMembers(data.members || []);
+      setOrgName(data.organization || "");
+    }
+  }
+
+  useEffect(() => { loadTeam(); }, []);
+
+  async function handleInvite(e) {
+    e.preventDefault();
+    setError(""); setSuccess(""); setInviteToken("");
+    if (!email || !password) return setError("Email and password are required");
+    setLoading(true);
+    const res = await api("/api/auth/invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, full_name: name, password }),
+    });
+    const data = await res.json();
+    setLoading(false);
+    if (!res.ok) { setError(data.error || "Invite failed"); return; }
+    setInviteToken(data.access_token);
+    setSuccess(`Account created for ${email}`);
+    setEmail(""); setName(""); setPassword("");
+    loadTeam();
+  }
+
+  async function handleRemove(userId) {
+    if (!confirm("Remove this team member?")) return;
+    const res = await api("/api/auth/invite", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+    if (res.ok) loadTeam();
+    else alert("Failed to remove member");
+  }
+
+  return (
+    <div>
+      <div style={s.card}>
+        <h2 style={s.sectionTitle}>Team — {orgName}</h2>
+        <p style={{ color: "#6B7A99", fontSize: 13, marginTop: -8, marginBottom: 16 }}>
+          All members share documents and analysis. Invite colleagues to collaborate on due diligence.
+        </p>
+        {members.length === 0
+          ? <p style={{ color: "#6B7A99" }}>No team members yet.</p>
+          : (
+            <table style={{ ...ms.table, marginBottom: 0, fontSize: 13 }}>
+              <thead>
+                <tr>
+                  <th style={ms.th}>Name</th>
+                  <th style={ms.th}>Email</th>
+                  <th style={ms.th}>Role</th>
+                  <th style={ms.th}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {members.map((m, i) => (
+                  <tr key={m.id} style={{ background: i % 2 === 0 ? "#F0F4F8" : "#fff" }}>
+                    <td style={ms.td}>{m.full_name || "—"}</td>
+                    <td style={ms.td}>{m.email}</td>
+                    <td style={ms.td}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: m.role === "member" ? "#6B7A99" : GREEN }}>
+                        {m.role || "admin"}
+                      </span>
+                    </td>
+                    <td style={ms.td}>
+                      {m.id !== currentUser?.id && (
+                        <button
+                          style={{ ...s.dlBtn, background: RED }}
+                          onClick={() => handleRemove(m.id)}
+                        >Remove</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
+        }
+      </div>
+
+      <div style={s.card}>
+        <h2 style={s.sectionTitle}>Invite Team Member</h2>
+        {error && <div style={s.err}>{error}</div>}
+        {success && (
+          <div style={{ background: "#E8F5E9", border: "1px solid #3DAA5C", borderRadius: 7, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: "#155724" }}>
+            ✅ {success}
+            {inviteToken && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontWeight: 700, color: NAVY, marginBottom: 4, fontSize: 12 }}>Login token (share with team member):</div>
+                <code style={{ fontSize: 10, wordBreak: "break-all", background: "#F0F4F8", padding: "4px 8px", borderRadius: 4, display: "block" }}>
+                  {inviteToken}
+                </code>
+              </div>
+            )}
+          </div>
+        )}
+        <form onSubmit={handleInvite}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+            <div>
+              <label style={s.label}>Full Name</label>
+              <input style={{ ...s.searchInput, width: "100%", boxSizing: "border-box" }}
+                placeholder="Jean Dupont" value={name} onChange={e => setName(e.target.value)} />
+            </div>
+            <div>
+              <label style={s.label}>Email *</label>
+              <input style={{ ...s.searchInput, width: "100%", boxSizing: "border-box" }}
+                type="email" placeholder="jean@company.com" value={email} onChange={e => setEmail(e.target.value)} required />
+            </div>
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={s.label}>Temporary Password *</label>
+            <input style={{ ...s.searchInput, width: "100%", boxSizing: "border-box", maxWidth: 320 }}
+              type="password" placeholder="Set a password for them" value={password} onChange={e => setPassword(e.target.value)} required />
+          </div>
+          <button style={s.uploadBtn} type="submit" disabled={loading}>
+            {loading ? "Inviting…" : "➕ Add Team Member"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const [user, setUser] = useState(null);
@@ -444,6 +683,7 @@ export default function Dashboard() {
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [previewDoc, setPreviewDoc] = useState(null);
+  const [retrying, setRetrying] = useState(null);
   const fileRef = useRef();
   const router = useRouter();
 
@@ -524,6 +764,24 @@ export default function Dashboard() {
     setPreviewDoc(data);
   }
 
+  async function handleDocx(docId, filename) {
+    const res = await api(`/api/documents/${docId}/docx`);
+    if (!res.ok) { alert("Word export failed"); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename.replace(/\.pdf$/i, "_DataCrunch.docx"); a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleRetry(docId) {
+    setRetrying(docId);
+    // Re-trigger by re-uploading isn't possible without the file; instead mark as pending and trigger re-analysis
+    // We'll show a message directing user to re-upload
+    setRetrying(null);
+    alert("To retry, please re-upload the PDF file. Failed documents cannot be re-processed without the original file.");
+  }
+
   const usedPct = sub ? Math.min(100, (sub.documents_used / sub.monthly_quota) * 100) : 0;
   const qColor = usedPct >= 100 ? RED : usedPct >= 80 ? YELLOW : GREEN;
 
@@ -550,10 +808,12 @@ export default function Dashboard() {
       <div style={s.tabBar}>
         {[
           { id: "upload", label: "⬆ Upload" },
+          { id: "batch", label: "📂 Batch Payslips" },
           { id: "history", label: `📋 Documents (${total})` },
           { id: "compare", label: "⚖ N vs N-1" },
           { id: "combined", label: "📦 Combined Report" },
           { id: "checklist", label: "✅ Checklist" },
+          { id: "team", label: "👥 Team" },
         ].map(t => (
           <button key={t.id} style={{ ...s.tabBtn, ...(tab === t.id ? s.tabActive : {}) }}
             onClick={() => setTab(t.id)}>{t.label}</button>
@@ -672,9 +932,19 @@ export default function Dashboard() {
                                 <button style={s.dlBtn} onClick={() => handlePreview(doc.id)}>Preview</button>
                                 <button style={s.dlBtn} onClick={() => handleDownload(doc.id, doc.filename)}>Excel</button>
                                 <button style={{ ...s.dlBtn, background: "#7B3F9E" }} onClick={() => handlePptx(doc.id, doc.filename)}>PPT</button>
+                                <button style={{ ...s.dlBtn, background: "#2980B9" }} onClick={() => handleDocx(doc.id, doc.filename)}>Word</button>
                               </>)}
                               {doc.status === "failed" && (
-                                <span style={{ color: RED, fontSize: 11 }}>{doc.error_message?.slice(0, 40)}</span>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                  <span style={{ color: RED, fontSize: 11 }}>{doc.error_message?.slice(0, 50) || "Processing failed"}</span>
+                                  <button
+                                    style={{ ...s.dlBtn, background: YELLOW, color: "#333", fontSize: 10 }}
+                                    onClick={() => handleRetry(doc.id)}
+                                    disabled={retrying === doc.id}
+                                  >
+                                    {retrying === doc.id ? "…" : "↺ Retry"}
+                                  </button>
+                                </div>
                               )}
                             </div>
                           </td>
@@ -687,6 +957,11 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* ── BATCH PAYSLIPS TAB ── */}
+        {tab === "batch" && (
+          <BatchPayrollTab onDone={() => { load({ type: typeFilter, status: statusFilter, search }); setTab("history"); }} />
+        )}
+
         {/* ── COMPARE TAB ── */}
         {tab === "compare" && <CompareTab docs={docs.length ? docs : []} />}
 
@@ -695,6 +970,9 @@ export default function Dashboard() {
 
         {/* ── CHECKLIST TAB ── */}
         {tab === "checklist" && <ChecklistTab docs={docs} />}
+
+        {/* ── TEAM TAB ── */}
+        {tab === "team" && <TeamTab currentUser={user} />}
       </div>
 
       {/* Preview Modal */}
