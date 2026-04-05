@@ -6,6 +6,7 @@ import { ocrPDF } from "@/lib/ocr";
 import { extractFinancialData } from "@/lib/ai";
 import { validateExtractedData } from "@/lib/validate";
 import { analyzeRedFlags } from "@/lib/redflags";
+import { computeMetrics, computeRiskScore, generateNarrative } from "@/lib/analysis";
 
 export const maxDuration = 120;
 
@@ -130,13 +131,30 @@ export async function POST(request) {
       // Step 4: Validation
       const { validation_passed, validation_notes } = validateExtractedData(extracted);
 
-      // Step 5: Red flags
-      const { flags, grade, score, label } = analyzeRedFlags(extracted);
+      // Step 5: Compute derived metrics (never mutates extracted)
+      const metrics = computeMetrics(extracted);
 
-      // Attach flags to extracted for export
-      extracted._flags = flags;
+      // Step 6: Red flags (now uses pre-computed metrics)
+      const flags = analyzeRedFlags(extracted, metrics);
 
-      // Step 6: Update document
+      // Step 7: Risk score 0-100
+      const { score, grade, label, breakdown } = computeRiskScore(extracted, metrics, flags);
+
+      // Step 8: AI narrative (async, non-blocking on failure)
+      let narrative = "";
+      try {
+        narrative = await generateNarrative(extracted, metrics, flags, { score, grade, label });
+      } catch (e) {
+        console.warn("Narrative skipped:", e.message);
+      }
+
+      // Attach analysis results to extracted for export (read-only fields)
+      extracted._flags                       = flags;
+      extracted._metrics                     = metrics;
+      extracted._metrics._score_breakdown    = breakdown;
+      extracted._narrative                   = narrative;
+
+      // Step 9: Update document
       const reloadedDb = await loadDB();
       const docIdx = reloadedDb.documents.findIndex((d) => d.id === docId);
       if (docIdx !== -1) {
@@ -151,6 +169,7 @@ export async function POST(request) {
           risk_score: score,
           risk_label: label,
           red_flags_count: flags.length,
+          has_critical_flags: flags.some(f => f.severity === "CRITICAL"),
           extracted_data: extracted,
         };
       }
