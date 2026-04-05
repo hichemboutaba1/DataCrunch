@@ -71,24 +71,36 @@ export async function POST(request) {
       let pages = 1;
       try {
         const result = await extractTextFromPDF(buffer);
-        text = result.text;
+        text = result.text || "";
         pages = result.pages;
       } catch (e) {
         console.warn("PDF parse failed:", e.message);
       }
 
-      // Step 2: OCR if text insufficient
-      if (!text || text.trim().length < 80) {
+      // Step 2: OCR if text insufficient (only if Mistral key is real)
+      const mistralKey = process.env.MISTRAL_API_KEY || "";
+      const hasRealOCR = mistralKey.length > 10 && !mistralKey.startsWith("sk-dummy");
+      if (hasRealOCR && (!text || text.trim().length < 80)) {
         console.log("Text too short, using OCR...");
         try {
-          text = await ocrPDF(buffer);
+          const ocrText = await ocrPDF(buffer);
+          if (ocrText && ocrText.trim().length > text.trim().length) {
+            text = ocrText;
+          }
         } catch (e) {
           console.warn("OCR failed:", e.message);
         }
       }
 
-      if (!text || text.trim().length < 20) {
-        throw new Error("Impossible d'extraire le texte du PDF");
+      // Clean text
+      text = text.replace(/\x00/g, "").trim();
+
+      if (!text || text.length < 10) {
+        throw new Error(
+          hasRealOCR
+            ? "Impossible d'extraire le texte du PDF. Vérifiez que le fichier n'est pas corrompu."
+            : "Impossible de lire ce PDF (probablement scanné). Ajoutez une clé MISTRAL_API_KEY valide pour activer l'OCR."
+        );
       }
 
       // Step 3: AI extraction
