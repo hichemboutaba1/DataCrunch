@@ -86,9 +86,24 @@ function UploadTab({ onDone }) {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("document_type", type);
-      const res = await api("/api/documents/upload", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Upload échoué");
+
+      // 110s client timeout
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 110000);
+
+      let res;
+      try {
+        res = await api("/api/documents/upload", { method: "POST", body: fd, signal: controller.signal });
+      } catch (fetchErr) {
+        if (fetchErr.name === "AbortError") throw new Error("Délai dépassé (110s) — le document est peut-être trop volumineux");
+        throw fetchErr;
+      } finally {
+        clearTimeout(timer);
+      }
+
+      let data;
+      try { data = await res.json(); } catch { throw new Error(`Erreur serveur (HTTP ${res.status})`); }
+      if (!res.ok) throw new Error(data.error || `Erreur serveur (${res.status})`);
       setResult(data.document);
       onDone();
     } catch (err) {
