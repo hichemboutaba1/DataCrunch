@@ -72,22 +72,40 @@ function Card({ children, style }) {
 }
 
 // ==================== UPLOAD TAB ====================
+const UPLOAD_STEPS = [
+  { label: "Extraction du texte PDF", duration: 15000 },
+  { label: "Analyse IA en cours", duration: 50000 },
+  { label: "Validation des données", duration: 25000 },
+  { label: "Analyse des risques", duration: 20000 },
+];
+
 function UploadTab({ onDone }) {
   const [file, setFile] = useState(null);
   const [type, setType] = useState("financial_statement");
   const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState(-1);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
 
   async function handleUpload() {
     if (!file) return;
-    setLoading(true); setError(""); setResult(null);
+    setLoading(true); setError(""); setResult(null); setStep(0);
+
+    // Animate through steps based on timing
+    let stepIdx = 0;
+    const timers = [];
+    let elapsed = 0;
+    for (let i = 0; i < UPLOAD_STEPS.length - 1; i++) {
+      elapsed += UPLOAD_STEPS[i].duration;
+      const idx = i + 1;
+      timers.push(setTimeout(() => setStep(idx), elapsed));
+    }
+
     try {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("document_type", type);
 
-      // 110s client timeout
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 110000);
 
@@ -109,7 +127,9 @@ function UploadTab({ onDone }) {
     } catch (err) {
       setError(err.message);
     } finally {
+      timers.forEach(clearTimeout);
       setLoading(false);
+      setStep(-1);
     }
   }
 
@@ -123,13 +143,34 @@ function UploadTab({ onDone }) {
           <option value="revenue_list">Liste de revenus / clients</option>
           <option value="payroll">Bulletin de paie</option>
         </select>
-        <input type="file" accept=".pdf" onChange={(e) => setFile(e.target.files?.[0] || null)}
+        <input type="file" accept=".pdf" onChange={(e) => { setFile(e.target.files?.[0] || null); setResult(null); setError(""); }}
           style={{ padding: 10, border: "1.5px dashed #D0DAE8", borderRadius: 8, cursor: "pointer" }} />
         <button onClick={handleUpload} disabled={!file || loading}
           style={{ padding: "12px", background: loading ? "#9BB0C7" : GREEN, color: "#fff", border: "none", borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: loading ? "not-allowed" : "pointer" }}>
           {loading ? "Analyse en cours..." : "Analyser le document"}
         </button>
       </div>
+
+      {loading && step >= 0 && (
+        <div style={{ marginTop: 16, padding: 16, background: "#F7FAFC", borderRadius: 8, border: "1px solid #E2E8F0" }}>
+          {UPLOAD_STEPS.map((s, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0" }}>
+              <div style={{
+                width: 18, height: 18, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700,
+                background: i < step ? GREEN : i === step ? NAVY : "#E2E8F0",
+                color: i <= step ? "#fff" : "#999",
+                border: i === step ? `2px solid ${GREEN}` : "none",
+              }}>
+                {i < step ? "✓" : i + 1}
+              </div>
+              <span style={{ fontSize: 13, color: i === step ? NAVY : i < step ? GREEN : "#AAA", fontWeight: i === step ? 600 : 400 }}>
+                {s.label}{i === step ? "..." : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {error && <div style={{ marginTop: 12, padding: 12, background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: 8, color: RED, fontSize: 13 }}>{error}</div>}
       {result && (
         <div style={{ marginTop: 16, padding: 16, background: "#F0FFF4", border: "1px solid #C6F6D5", borderRadius: 8 }}>
@@ -575,7 +616,8 @@ function TeamTab() {
     }
   }
 
-  async function removeMember(userId) {
+  async function removeMember(userId, memberName) {
+    if (!window.confirm(`Retirer ${memberName} de l'équipe ?`)) return;
     await api("/api/auth/invite", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
@@ -604,7 +646,7 @@ function TeamTab() {
             <div style={{ fontWeight: 500, fontSize: 14 }}>{m.full_name}</div>
             <div style={{ fontSize: 12, color: "#888" }}>{m.email}</div>
           </div>
-          <button onClick={() => removeMember(m.id)}
+          <button onClick={() => removeMember(m.id, m.full_name)}
             style={{ padding: "4px 10px", borderRadius: 6, border: "none", background: "#FEF2F2", color: RED, fontSize: 12, cursor: "pointer" }}>
             Retirer
           </button>

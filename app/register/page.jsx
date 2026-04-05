@@ -6,12 +6,17 @@ import Link from "next/link";
 export default function RegisterPage() {
   const router = useRouter();
   const [form, setForm] = useState({ full_name: "", organization_name: "", email: "", password: "" });
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
+    if (form.password !== confirmPassword) {
+      setError("Les mots de passe ne correspondent pas");
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/auth/register", {
@@ -65,11 +70,17 @@ export default function RegisterPage() {
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               placeholder="jean@masociete.com" style={inputStyle} />
           </div>
-          <div style={{ marginBottom: 24 }}>
+          <div style={{ marginBottom: 16 }}>
             <label style={labelStyle}>Mot de passe</label>
             <input type="password" required minLength={8} value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               placeholder="Minimum 8 caractères" style={inputStyle} />
+          </div>
+          <div style={{ marginBottom: 24 }}>
+            <label style={labelStyle}>Confirmer le mot de passe</label>
+            <input type="password" required minLength={8} value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Répéter le mot de passe" style={inputStyle} />
           </div>
 
           {error && (

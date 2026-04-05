@@ -9,6 +9,12 @@ import { analyzeRedFlags } from "@/lib/redflags";
 
 export const maxDuration = 120;
 
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+
+function isPDF(buffer) {
+  return buffer.length > 4 && buffer.slice(0, 4).toString("hex") === "25504446";
+}
+
 export async function POST(request) {
   try {
     const payload = await authenticate(request);
@@ -21,7 +27,7 @@ export async function POST(request) {
     const sub = (db.subscriptions || []).find((s) => s.organization_id === orgId);
     if (!sub) return NextResponse.json({ error: "Aucun abonnement trouvé" }, { status: 403 });
     if (sub.documents_used >= sub.monthly_quota) {
-      return NextResponse.json({ error: `Quota mensuel atteint (${sub.monthly_quota} documents)` }, { status: 429 });
+      return NextResponse.json({ error: `Quota mensuel atteint (${sub.monthly_quota} documents/mois)` }, { status: 429 });
     }
 
     const formData = await request.formData();
@@ -30,6 +36,11 @@ export async function POST(request) {
 
     if (!file) return NextResponse.json({ error: "Fichier PDF requis" }, { status: 400 });
 
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json({ error: `Fichier trop volumineux (max 50MB, reçu ${(file.size / 1024 / 1024).toFixed(1)}MB)` }, { status: 413 });
+    }
+
     const validTypes = ["financial_statement", "revenue_list", "payroll"];
     if (!validTypes.includes(document_type)) {
       return NextResponse.json({ error: "Type de document invalide" }, { status: 400 });
@@ -37,6 +48,11 @@ export async function POST(request) {
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+
+    // Validate file is actually a PDF
+    if (!isPDF(buffer)) {
+      return NextResponse.json({ error: "Le fichier n'est pas un PDF valide" }, { status: 400 });
+    }
 
     // Create document record
     const docId = nextId(db);
@@ -61,18 +77,21 @@ export async function POST(request) {
     };
 
     db.documents = [...(db.documents || []), doc];
-    // Increment usage
-    sub.documents_used = (sub.documents_used || 0) + 1;
+    // Increment usage — will rollback if processing fails
+    const subIdx = db.subscriptions.findIndex((s) => s.organization_id === orgId);
+    db.subscriptions[subIdx].documents_used = (db.subscriptions[subIdx].documents_used || 0) + 1;
     await saveDB(db);
 
     try {
       // Step 1: Extract text from PDF
+      const t0 = Date.now();
       let text = "";
       let pages = 1;
       try {
         const result = await extractTextFromPDF(buffer);
         text = result.text || "";
         pages = result.pages;
+        console.log(`PDF text extracted: ${text.length} chars in ${Date.now() - t0}ms`);
       } catch (e) {
         console.warn("PDF parse failed:", e.message);
       }
@@ -86,6 +105,7 @@ export async function POST(request) {
           const ocrText = await ocrPDF(buffer);
           if (ocrText && ocrText.trim().length > text.trim().length) {
             text = ocrText;
+            console.log(`OCR result: ${text.length} chars`);
           }
         } catch (e) {
           console.warn("OCR failed:", e.message);
@@ -99,11 +119,12 @@ export async function POST(request) {
         throw new Error(
           hasRealOCR
             ? "Impossible d'extraire le texte du PDF. Vérifiez que le fichier n'est pas corrompu."
-            : "Impossible de lire ce PDF (probablement scanné). Ajoutez une clé MISTRAL_API_KEY valide pour activer l'OCR."
+            : "PDF scanné détecté — texte illisible. Ajoutez une clé MISTRAL_API_KEY pour activer l'OCR, ou utilisez un PDF avec texte sélectionnable."
         );
       }
 
       // Step 3: AI extraction
+      console.log(`Starting AI extraction for ${document_type}...`);
       const extracted = await extractFinancialData(text, document_type);
 
       // Step 4: Validation
@@ -135,22 +156,34 @@ export async function POST(request) {
       }
 
       await saveDB(reloadedDb);
+      console.log(`Document ${docId} completed in ${Date.now() - t0}ms`);
 
       const { extracted_data, ...docMeta } = reloadedDb.documents[docIdx] || {};
       return NextResponse.json({ document: { ...docMeta, risk_grade: grade, risk_label: label } });
+
     } catch (processingErr) {
-      console.error("Processing error:", processingErr);
+      console.error("Processing error:", processingErr.message);
+
+      // Rollback quota on failure
       const reloadedDb = await loadDB();
+      const failSubIdx = reloadedDb.subscriptions.findIndex((s) => s.organization_id === orgId);
+      if (failSubIdx !== -1) {
+        reloadedDb.subscriptions[failSubIdx].documents_used = Math.max(
+          0,
+          (reloadedDb.subscriptions[failSubIdx].documents_used || 1) - 1
+        );
+      }
       const docIdx = reloadedDb.documents.findIndex((d) => d.id === docId);
       if (docIdx !== -1) {
         reloadedDb.documents[docIdx].status = "failed";
         reloadedDb.documents[docIdx].error_message = processingErr.message;
       }
       await saveDB(reloadedDb);
+
       return NextResponse.json({ error: processingErr.message }, { status: 422 });
     }
   } catch (err) {
     console.error("Upload route error:", err);
-    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
+    return NextResponse.json({ error: "Erreur serveur inattendue" }, { status: 500 });
   }
 }
