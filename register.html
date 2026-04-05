@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DataCrunch — Créer un compte</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F0F4F8; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .card { background: #fff; border-radius: 14px; box-shadow: 0 4px 28px rgba(27,42,74,0.13); padding: 44px 40px; width: 100%; max-width: 440px; }
+    .logo { text-align: center; font-size: 28px; font-weight: 800; color: #1B2A4A; margin-bottom: 6px; }
+    .logo span { color: #3DAA5C; }
+    .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 32px; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #1B2A4A; margin-bottom: 6px; }
+    input {
+      width: 100%; padding: 11px 13px; border: 1.5px solid #D0DAE8;
+      border-radius: 8px; font-size: 14px; outline: none; margin-bottom: 16px;
+      transition: border-color 0.2s;
+    }
+    input:focus { border-color: #3DAA5C; }
+    .btn {
+      width: 100%; padding: 13px; background: #3DAA5C; color: #fff;
+      border: none; border-radius: 9px; font-size: 15px; font-weight: 700;
+      cursor: pointer; transition: background 0.2s; margin-top: 4px;
+    }
+    .btn:hover { background: #2d8a49; }
+    .btn:disabled { background: #9BB0C7; cursor: not-allowed; }
+    .error { background: #FEF2F2; border: 1px solid #FCA5A5; border-radius: 8px; padding: 11px 14px; color: #C0392B; font-size: 13px; margin-bottom: 16px; display: none; }
+    .success { background: #F0FFF4; border: 1px solid #C6F6D5; border-radius: 8px; padding: 11px 14px; color: #276749; font-size: 13px; margin-bottom: 16px; display: none; }
+    .login-link { text-align: center; margin-top: 20px; font-size: 13px; color: #666; }
+    .login-link a { color: #1B2A4A; font-weight: 700; text-decoration: none; }
+    .login-link a:hover { text-decoration: underline; }
+    .note { text-align: center; font-size: 12px; color: #AAA; margin-top: 10px; }
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 3px solid rgba(255,255,255,0.4); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">Data<span>Crunch</span></div>
+  <div class="subtitle">Créez votre compte — 100 docs/mois gratuits</div>
+
+  <div class="error" id="error"></div>
+  <div class="success" id="success"></div>
+
+  <form id="form">
+    <label>Nom complet</label>
+    <input type="text" id="full_name" placeholder="Jean Dupont" required />
+
+    <label>Nom de l'organisation</label>
+    <input type="text" id="org" placeholder="Ma Société SAS" required />
+
+    <label>Email professionnel</label>
+    <input type="email" id="email" placeholder="jean@masociete.com" required />
+
+    <label>Mot de passe</label>
+    <input type="password" id="password" placeholder="Minimum 8 caractères" minlength="8" required />
+
+    <button type="submit" class="btn" id="btn">Créer mon compte gratuit</button>
+  </form>
+
+  <div class="note">Sans carte de crédit · Annulation immédiate</div>
+  <div class="login-link">Déjà un compte ? <a href="login.html">Se connecter</a></div>
+</div>
+
+<script>
+  document.getElementById('form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btn');
+    const errDiv = document.getElementById('error');
+    const okDiv = document.getElementById('success');
+    errDiv.style.display = 'none';
+    okDiv.style.display = 'none';
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Création du compte...';
+
+    const body = {
+      full_name: document.getElementById('full_name').value,
+      organization_name: document.getElementById('org').value,
+      email: document.getElementById('email').value,
+      password: document.getElementById('password').value,
+    };
+
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Inscription échouée');
+      localStorage.setItem('dc_token', data.access_token);
+      okDiv.textContent = 'Compte créé ! Redirection...';
+      okDiv.style.display = 'block';
+      setTimeout(() => { window.location.href = '/dashboard'; }, 800);
+    } catch (err) {
+      errDiv.textContent = err.message;
+      errDiv.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Créer mon compte gratuit';
+    }
+  });
+</script>
+</body>
+</html>
